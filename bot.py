@@ -5,10 +5,12 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Messa
 from google import genai
 from google.genai import types
 
-# Enable logging
+# Enable main logging, but silence noisy HTTP request logs from httpx
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -25,6 +27,26 @@ user_states = {}
 user_data = {}
 USER_MEMORIES = {}
 SYSTEM_PROMPTS = {}
+
+# Universal safety settings to completely disable blocking for NSFW/Roleplay content
+SAFETY_CONFIG = [
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold=types.HarmBlockThreshold.BLOCK_NONE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=types.HarmBlockThreshold.BLOCK_NONE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=types.HarmBlockThreshold.BLOCK_NONE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=types.HarmBlockThreshold.BLOCK_NONE,
+    ),
+]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -84,7 +106,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scenario = user_data[user_id]["scenario"]
         extra_rules = user_data[user_id]["extra_rules"]
         
-        # Build strict system prompt ensuring Hinglish and single-backtick actions
         SYSTEM_PROMPTS[user_id] = f"""
 {persona}
 
@@ -102,8 +123,7 @@ CRITICAL LANGUAGE & FORMATTING RULES:
         try:
             await update.message.reply_text("🚀 Setup complete! Initializing roleplay...")
             
-            # Send intro scenario trigger to the model
-            intro_msg = f"*(Scene starts: {scenario})*"
+            intro_msg = f"Begin the roleplay based on this scenario: {scenario}"
             USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": intro_msg}]})
             
             response = gemini_client.models.generate_content(
@@ -113,12 +133,7 @@ CRITICAL LANGUAGE & FORMATTING RULES:
                     system_instruction=SYSTEM_PROMPTS[user_id],
                     temperature=0.85,
                     max_output_tokens=600,
-                    safety_settings=[
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    ]
+                    safety_settings=SAFETY_CONFIG
                 )
             )
             
@@ -128,7 +143,7 @@ CRITICAL LANGUAGE & FORMATTING RULES:
             
         except Exception as e:
             logger.error(f"Error starting chat: {e}")
-            await update.message.reply_text("`Character loaded, but failed to initialize scenario.`", parse_mode="Markdown")
+            await update.message.reply_text("`Character loaded, but failed to initialize scenario. Send a message to start roleplaying manually.`", parse_mode="Markdown")
             
     elif state == "ACTIVE":
         if user_id not in USER_MEMORIES:
@@ -144,12 +159,7 @@ CRITICAL LANGUAGE & FORMATTING RULES:
                     system_instruction=SYSTEM_PROMPTS.get(user_id, "You are a roleplay character."),
                     temperature=0.85,
                     max_output_tokens=600,
-                    safety_settings=[
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    ]
+                    safety_settings=SAFETY_CONFIG
                 )
             )
             
