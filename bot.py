@@ -28,23 +28,23 @@ user_data = {}
 USER_MEMORIES = {}
 SYSTEM_PROMPTS = {}
 
-# Dictionary-based safety config compatible with the modern google-genai library
+# Safe dictionary-based configuration using string keys/values to prevent attribute errors
 SAFETY_CONFIG = [
     {
-        "category": types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "threshold": "BLOCK_NONE",
     },
     {
-        "category": types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "threshold": "BLOCK_NONE",
     },
     {
-        "category": types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "threshold": "BLOCK_NONE",
     },
     {
-        "category": types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "threshold": "BLOCK_NONE",
     },
 ]
 
