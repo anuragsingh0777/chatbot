@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Messa
 from google import genai
 from google.genai import types
 
-# Enable main logging, but silence noisy HTTP request logs from httpx
+# Enable main logging, silence noisy HTTP logs from httpx
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -28,24 +28,24 @@ user_data = {}
 USER_MEMORIES = {}
 SYSTEM_PROMPTS = {}
 
-# Universal safety settings to completely disable blocking for NSFW/Roleplay content
+# Dictionary-based safety config compatible with the modern google-genai library
 SAFETY_CONFIG = [
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
+    {
+        "category": types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+    },
+    {
+        "category": types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+    },
+    {
+        "category": types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+    },
+    {
+        "category": types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+    },
 ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
