@@ -28,7 +28,7 @@ user_data = {}
 USER_MEMORIES = {}
 SYSTEM_PROMPTS = {}
 
-# Safe dictionary-based configuration using string keys/values to prevent attribute errors
+# Safe dictionary-based configuration using string keys/values
 SAFETY_CONFIG = [
     {
         "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
@@ -51,17 +51,35 @@ SAFETY_CONFIG = [
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_states[user_id] = "WAITING_FOR_PERSONA"
-    user_data[user_id] = {}
+    user_data[user_id] = {"persona": ""}
     
     await update.message.reply_text(
         "👋 Welcome! Let's set up your character wizard.\n\n"
-        "Please send me the **Personality / System Prompt** for the character:"
+        "Your persona prompt is too big for one message? No problem! "
+        "You can send it in **multiple messages**. When you are completely done sending all parts of your persona, type **`/done`** to proceed."
     )
+
+async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    state = user_states.get(user_id)
+    
+    if state == "WAITING_FOR_PERSONA":
+        if not user_data.get(user_id, {}).get("persona"):
+            await update.message.reply_text("⚠️ You haven't sent any persona text yet! Please send your character persona first.")
+            return
+            
+        user_states[user_id] = "WAITING_FOR_SCENARIO"
+        await update.message.reply_text(
+            "✅ Full persona saved successfully!\n\n"
+            "Now, send me the **Starting Scenario** (location, current situation, what is happening right now):"
+        )
+    else:
+        await update.message.reply_text("⚠️ This command is only used when you are finishing your persona text.")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_states[user_id] = "WAITING_FOR_PERSONA"
-    user_data[user_id] = {}
+    user_data[user_id] = {"persona": ""}
     if user_id in USER_MEMORIES:
         del USER_MEMORIES[user_id]
     if user_id in SYSTEM_PROMPTS:
@@ -69,7 +87,7 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await update.message.reply_text(
         "🔄 Resetting configuration...\n\n"
-        "Please send me the **Personality / System Prompt** for the new character:"
+        "Please send me the **Personality / System Prompt** for the new character (you can send it in multiple parts, then type `/done`):"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,12 +97,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = user_states.get(user_id, "WAITING_FOR_PERSONA")
     
     if state == "WAITING_FOR_PERSONA":
-        user_data[user_id]["persona"] = text
-        user_states[user_id] = "WAITING_FOR_SCENARIO"
-        await update.message.reply_text(
-            "✅ Personality saved!\n\n"
-            "Now, send me the **Starting Scenario** (e.g., location, current situation, what is happening right now):"
-        )
+        # Append incoming text chunks together so long prompts fit seamlessly
+        current_persona = user_data[user_id].get("persona", "")
+        if current_persona:
+            user_data[user_id]["persona"] = current_persona + "\n\n" + text
+        else:
+            user_data[user_id]["persona"] = text
+            
+        await update.message.reply_text("📥 Part received and added! Send the next part, or type **`/done`** when finished.")
         
     elif state == "WAITING_FOR_SCENARIO":
         user_data[user_id]["scenario"] = text
@@ -175,6 +195,7 @@ def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("done", done_command))
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
