@@ -81,7 +81,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scenario = user_data[user_id]["scenario"]
         extra_rules = user_data[user_id]["extra_rules"]
         
-        # System instructions including Hinglish blending and monospace formatting
+        # System instructions featuring Hinglish blending and monospace formatting
         system_instruction = f"""
 {persona}
 
@@ -95,7 +95,7 @@ CRITICAL LANGUAGE & FORMATTING RULES:
 """
 
         chat_sessions[user_id] = gemini_client.chats.create(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.8,
@@ -134,7 +134,7 @@ def main():
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    print("Hinglish Roleplay Bot is running...")
+    print("Hinglish Setup Wizard Bot is running with Gemini 3.1 Flash-Lite...")
     application.run_polling()
 
 if __name__ == "__main__":
