@@ -9,7 +9,6 @@ from google.genai import types
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -19,11 +18,13 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN or GEMINI_API_KEY in environment variables.")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL_ID = "gemini-3.1-flash-lite"
 
-# Track multi-step configuration states per user
+# Track multi-step configuration states and conversation history per user
 user_states = {}
 user_data = {}
-chat_sessions = {}
+USER_MEMORIES = {}
+SYSTEM_PROMPTS = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -31,7 +32,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[user_id] = {}
     
     await update.message.reply_text(
-        "👋 Welcome! Let's set up your character.\n\n"
+        "👋 Welcome! Let's set up your character wizard.\n\n"
         "Please send me the **Personality / System Prompt** for the character:"
     )
 
@@ -39,8 +40,10 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_states[user_id] = "WAITING_FOR_PERSONA"
     user_data[user_id] = {}
-    if user_id in chat_sessions:
-        del chat_sessions[user_id]
+    if user_id in USER_MEMORIES:
+        del USER_MEMORIES[user_id]
+    if user_id in SYSTEM_PROMPTS:
+        del SYSTEM_PROMPTS[user_id]
         
     await update.message.reply_text(
         "🔄 Resetting configuration...\n\n"
@@ -81,8 +84,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scenario = user_data[user_id]["scenario"]
         extra_rules = user_data[user_id]["extra_rules"]
         
-        # System instructions featuring Hinglish blending and monospace formatting
-        system_instruction = f"""
+        # Build strict system prompt ensuring Hinglish and single-backtick actions
+        SYSTEM_PROMPTS[user_id] = f"""
 {persona}
 
 Additional Guidelines:
@@ -94,35 +97,66 @@ CRITICAL LANGUAGE & FORMATTING RULES:
 3. Spoken dialogue MUST be in normal text or double quotes (e.g. "Tum sudhroge nahi kya? Get up right now!").
 """
 
-        chat_sessions[user_id] = gemini_client.chats.create(
-            model="gemini-3.1-flash-lite",
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.8,
-            )
-        )
-        
-        chat = chat_sessions[user_id]
+        USER_MEMORIES[user_id] = []
         
         try:
             await update.message.reply_text("🚀 Setup complete! Initializing roleplay...")
-            intro_prompt = f"*(Scene starts: {scenario})*"
-            response = chat.send_message(intro_prompt)
-            await update.message.reply_text(response.text, parse_mode="Markdown")
+            
+            # Send intro scenario trigger to the model
+            intro_msg = f"*(Scene starts: {scenario})*"
+            USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": intro_msg}]})
+            
+            response = gemini_client.models.generate_content(
+                model=MODEL_ID,
+                contents=USER_MEMORIES[user_id],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPTS[user_id],
+                    temperature=0.85,
+                    max_output_tokens=600,
+                    safety_settings=[
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                    ]
+                )
+            )
+            
+            raw_text = response.text.strip() if response.text else ""
+            USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
+            await update.message.reply_text(raw_text, parse_mode="Markdown")
+            
         except Exception as e:
             logger.error(f"Error starting chat: {e}")
             await update.message.reply_text("`Character loaded, but failed to initialize scenario.`", parse_mode="Markdown")
             
     elif state == "ACTIVE":
-        chat = chat_sessions.get(user_id)
-        if not chat:
-            user_states[user_id] = "WAITING_FOR_PERSONA"
-            await update.message.reply_text("Session expired. Please use /start to set up your character again.")
-            return
+        if user_id not in USER_MEMORIES:
+            USER_MEMORIES[user_id] = []
             
+        USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": text}]})
+        
         try:
-            response = chat.send_message(text)
-            await update.message.reply_text(response.text, parse_mode="Markdown")
+            response = gemini_client.models.generate_content(
+                model=MODEL_ID,
+                contents=USER_MEMORIES[user_id],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPTS.get(user_id, "You are a roleplay character."),
+                    temperature=0.85,
+                    max_output_tokens=600,
+                    safety_settings=[
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                    ]
+                )
+            )
+            
+            raw_text = response.text.strip() if response.text else ""
+            USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
+            await update.message.reply_text(raw_text, parse_mode="Markdown")
+            
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             await update.message.reply_text("`The character stares blankly, momentarily unresponsive.`", parse_mode="Markdown")
@@ -134,7 +168,7 @@ def main():
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    print("Hinglish Setup Wizard Bot is running with Gemini 3.1 Flash-Lite...")
+    print("Hinglish Roleplay Bot is running with Gemini 3.1 Flash-Lite...")
     application.run_polling()
 
 if __name__ == "__main__":
