@@ -128,8 +128,8 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot is running...")
-    app.run_polling()
+    print("Bot is running smoothly...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
