@@ -44,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del SYSTEM_PROMPTS[user_id]
     
     await update.message.reply_text(
-        "👋 **Welcome to the Interactive Roleplay Bot Setup!**\n\n"
+        "👋 **Welcome to the Roleplay Bot Setup!**\n\n"
         "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
         "*(Aap jitne chahein utne messages mein lamba description bhej sakte hain.)*\n"
         "Jab complete ho jaye, tab **`/done`** type karein."
@@ -125,7 +125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_states[user_id] = "SETTING_RULES"
             await update.message.reply_text(
                 "✅ **Scenario Saved!**\n\n"
-                "**Step 3 (SETTING_RULES):** Send additional rules or constraints (e.g., Hinglish language, backtick actions, tone guidelines).\n"
+                "**Step 3 (SETTING_RULES):** Send additional rules or constraints (or type `none` to use default styling rules).\n"
                 "*(Multiple messages mein bhej sakte hain, khatam hone par `/done` likhein)*"
             )
             return
@@ -139,12 +139,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Step 3: SETTING_RULES
     elif state == "SETTING_RULES":
         if text.lower() == "/done":
-            if not user_data[user_id]["rules"].strip():
-                user_data[user_id]["rules"] = (
-                    "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
-                    "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks.\n"
-                    "3. Spoken dialogue in normal text or double quotes."
-                )
+            if not user_data[user_id]["rules"].strip() or user_data[user_id]["rules"].lower() == "none":
+                user_data[user_id]["rules"] = "Follow exact character persona, short crisp actions, and Hinglish style."
             user_states[user_id] = "SETTING_PHOTO"
             await update.message.reply_text(
                 "✅ **Rules Saved!**\n\n"
@@ -199,29 +195,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": text}]})
         
         try:
+            safety_config = [
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+            ]
+            
             response = gemini_client.models.generate_content(
                 model=MODEL_ID,
                 contents=USER_MEMORIES[user_id],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPTS.get(user_id, "You are a roleplay character."),
-                    temperature=0.85,
-                    max_output_tokens=600,
-                    safety_settings=[
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    ]
+                    temperature=0.9,
+                    safety_settings=safety_config
                 )
             )
             
-            raw_text = response.text.strip() if response.text else "`She raises an eyebrow, waiting for your reply...`"
+            if not response.text:
+                raw_text = "`She smirks, adjusting her glasses as she waits for your reply.`"
+            else:
+                raw_text = response.text.strip()
+                
             USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
             await update.message.reply_text(raw_text, parse_mode="Markdown")
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            await update.message.reply_text("`The character pauses for a moment, waiting for you to rephrase...`", parse_mode="Markdown")
+            fallback = "`She crosses her arms, raising an eyebrow at your delay.`"
+            USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
+            await update.message.reply_text(fallback, parse_mode="Markdown")
 
 async def initialize_active_session(update: Update, user_id: int):
     data = user_data[user_id]
@@ -241,51 +244,51 @@ async def initialize_active_session(update: Update, user_id: int):
 [User Information]
 User's Name: {user_name}
 
-CRITICAL LANGUAGE & FORMATTING RULES:
-1. Language: You MUST speak in Hinglish (a natural conversational mix of Hindi and English words/phrases).
-2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she glares angrily`).
-3. Spoken dialogue MUST be in normal text or double quotes.
-4. Always address and refer to the user as {user_name}.
+CRITICAL STYLE & FORMATTING RULES:
+1. Language Style: Fluent Hinglish (natural mix of Hindi and English words/phrases).
+2. Action Length: Keep actions short, crisp, and punchy (e.g., `she leans against the desk, smirking`). Avoid unnecessarily long paragraphs of descriptions. Keep the conversation moving fast.
+3. Formatting: Physical actions/movements MUST be enclosed in single backticks. Spoken dialogues in normal text or double quotes.
+4. Always address and interact directly with the user as {user_name}. Maintain high tension and absolute character immersion without breaking character.
 """
 
     USER_MEMORIES[user_id] = []
     
     try:
-        await update.message.reply_text("🚀 Setup complete! Initializing roleplay...")
+        await update.message.reply_text("🚀 Setup complete! Launching roleplay...")
         
-        # Send optional photo confirmation if photo was provided
         if photo_id:
             await update.message.reply_photo(
                 photo=photo_id,
-                caption=f"✨ **Character Initialized with Profile Photo**\nUser: {user_name}"
+                caption=f"✨ **Character Initialized**\nUser: {user_name}"
             )
 
-        intro_msg = f"*(Scene starts: {scenario})* Address the user as {user_name}."
+        intro_msg = f"*(Scene starts: {scenario})* Begin the roleplay addressing {user_name} with your signature tone and short actions."
         USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": intro_msg}]})
+        
+        safety_config = [
+            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        ]
         
         response = gemini_client.models.generate_content(
             model=MODEL_ID,
             contents=USER_MEMORIES[user_id],
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPTS[user_id],
-                temperature=0.85,
-                max_output_tokens=600,
-                safety_settings=[
-                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                ]
+                temperature=0.9,
+                safety_settings=safety_config
             )
         )
         
-        raw_text = response.text.strip() if response.text else "`She watches you intently, waiting...`"
+        raw_text = response.text.strip() if response.text else f"`She glances up from her desk, her gaze locking onto {user_name}. 'Late again?'`"
         USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
         await update.message.reply_text(raw_text, parse_mode="Markdown")
         
     except Exception as e:
         logger.error(f"Error starting chat: {e}")
-        fallback = f"`She looks at you silently, waiting for you to begin, {user_name}...`"
+        fallback = f"`She taps her pen against the wood, waiting for you to speak, {user_name}.`"
         USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
         await update.message.reply_text(fallback, parse_mode="Markdown")
 
@@ -296,7 +299,7 @@ def main():
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO & (~filters.COMMAND), handle_message))
 
-    print("Hinglish Roleplay Bot with 6-Step Flow is running...")
+    print("Hinglish Short-Action Roleplay Bot is running successfully...")
     application.run_polling()
 
 if __name__ == "__main__":
