@@ -19,13 +19,12 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN/TELEGRAM_BOT_TOKEN or GEMINI_API_KEY in environment variables.")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-2.5-flash"  # Updated to a stable, highly efficient model ID
+MODEL_ID = "gemini-2.5-flash"
 
 # User state storage
 user_states = {}
 user_data = {}
-USER_MEMORIES = {}
-SYSTEM_PROMPTS = {}
+CHAT_SESSIONS = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -38,10 +37,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "user_name": ""
     }
     
-    if user_id in USER_MEMORIES:
-        del USER_MEMORIES[user_id]
-    if user_id in SYSTEM_PROMPTS:
-        del SYSTEM_PROMPTS[user_id]
+    if user_id in CHAT_SESSIONS:
+        del CHAT_SESSIONS[user_id]
     
     await update.message.reply_text(
         "👋 **Welcome to the Roleplay Bot Setup!**\n\n"
@@ -60,10 +57,8 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "photo_file_id": None,
         "user_name": ""
     }
-    if user_id in USER_MEMORIES:
-        del USER_MEMORIES[user_id]
-    if user_id in SYSTEM_PROMPTS:
-        del SYSTEM_PROMPTS[user_id]
+    if user_id in CHAT_SESSIONS:
+        del CHAT_SESSIONS[user_id]
         
     await update.message.reply_text(
         "🔄 **Session reset successfully!**\n\n"
@@ -187,44 +182,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("📥 Name saved. Type **/done** to complete setup and start roleplay.")
             return
 
-    # Step 6: ACTIVE Chat Mode
+    # Step 6: ACTIVE Chat Mode using Official Gemini Chats API
     elif state == "ACTIVE":
-        if user_id not in USER_MEMORIES:
-            USER_MEMORIES[user_id] = []
+        if user_id not in CHAT_SESSIONS:
+            await initialize_active_session(update, user_id)
+            return
             
-        USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": text}]})
-        
         try:
-            safety_config = [
-                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-            ]
+            chat = CHAT_SESSIONS[user_id]
+            response = chat.send_message(text)
             
-            response = gemini_client.models.generate_content(
-                model=MODEL_ID,
-                contents=USER_MEMORIES[user_id],
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPTS.get(user_id, "You are a roleplay character."),
-                    temperature=0.9,
-                    safety_settings=safety_config
-                )
-            )
-            
-            if not response.text:
-                raw_text = f"`She glares at {user_data[user_id]['user_name']} briefly, raising an eyebrow.`"
-            else:
-                raw_text = response.text.strip()
-                
-            USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
+            raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
             await update.message.reply_text(raw_text, parse_mode="Markdown")
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            fallback = f"`She watches {user_data[user_id]['user_name']} closely, waiting for a clearer response.`"
-            USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
-            await update.message.reply_text(fallback, parse_mode="Markdown")
+            await update.message.reply_text(f"`She taps her desk sharply, looking straight at {user_data[user_id]['user_name']}. 'Say that again.'`", parse_mode="Markdown")
 
 async def initialize_active_session(update: Update, user_id: int):
     data = user_data[user_id]
@@ -234,7 +207,7 @@ async def initialize_active_session(update: Update, user_id: int):
     user_name = data["user_name"]
     photo_id = data["photo_file_id"]
 
-    SYSTEM_PROMPTS[user_id] = f"""
+    system_prompt = f"""
 [Character Persona]
 {persona}
 
@@ -252,8 +225,6 @@ CRITICAL STYLE & ANTI-LOOP RULES:
 5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
 """
 
-    USER_MEMORIES[user_id] = []
-    
     try:
         await update.message.reply_text("🚀 Setup complete! Launching roleplay...")
         
@@ -263,9 +234,6 @@ CRITICAL STYLE & ANTI-LOOP RULES:
                 caption=f"✨ **Character Initialized**\nUser: {user_name}"
             )
 
-        intro_msg = f"*(Scene starts: {scenario})* Begin the roleplay addressing {user_name} with your signature tone and short actions."
-        USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": intro_msg}]})
-        
         safety_config = [
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
@@ -273,25 +241,26 @@ CRITICAL STYLE & ANTI-LOOP RULES:
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
         ]
         
-        response = gemini_client.models.generate_content(
+        # Initialize official chat session using chats.create
+        chat = gemini_client.chats.create(
             model=MODEL_ID,
-            contents=USER_MEMORIES[user_id],
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPTS[user_id],
+                system_instruction=system_prompt,
                 temperature=0.9,
                 safety_settings=safety_config
             )
         )
+        CHAT_SESSIONS[user_id] = chat
+
+        intro_msg = f"*(Scene starts: {scenario})* Begin the roleplay addressing {user_name} with your signature tone and short actions."
+        response = chat.send_message(intro_msg)
         
         raw_text = response.text.strip() if response.text else f"`She glances up from her desk, her gaze locking onto {user_name}. 'Late again?'`"
-        USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
-        await update.message.reply_text(raw_text, parse_mode="Markdown")
+        await update.message.reply_text(raw_text, parse_Mode="Markdown")
         
     except Exception as e:
         logger.error(f"Error starting chat: {e}")
-        fallback = f"`She looks up, waiting for you to begin, {user_name}.`"
-        USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
-        await update.message.reply_text(fallback, parse_mode="Markdown")
+        await update.message.reply_text(f"`She looks up, waiting for you to begin, {user_name}.`", parse_mode="Markdown")
 
 def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
