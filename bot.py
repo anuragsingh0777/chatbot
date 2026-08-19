@@ -185,13 +185,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # Step 6: ACTIVE Chat Mode using Official Gemini Chats API
-    # Step 6: ACTIVE Chat Mode using Official Gemini Chats API
     elif state == "ACTIVE":
         if user_id not in CHAT_SESSIONS:
             await recreate_chat_session(user_id)
            
         try:
-            # Yeh line Telegram par 'typing...' dikhayegi taaki fast lage
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
             
             chat = CHAT_SESSIONS[user_id]
@@ -211,7 +209,7 @@ async def recreate_chat_session(user_id: int):
     rules = data.get("rules", "Hinglish detailed actions")
     user_name = data.get("user_name", "Anurag")
 
-  system_prompt = f"""
+    system_prompt = f"""
 [Character Persona]
 {persona}
 
