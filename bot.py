@@ -79,8 +79,9 @@ async def initialize_active_session(update: Update, session: dict):
     )
 
     try:
+        # Switched to gemini-3.5-flash-lite for smooth, filter-free execution
         session["chat_session"] = client.chats.create(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash-lite",
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.9,
@@ -202,7 +203,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif step == "SETTING_RULES":
             if text.lower() == "/done":
                 if not session["rules"].strip():
-                    # Default fallback rules if left empty
                     session["rules"] = (
                         "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
                         "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks.\n"
