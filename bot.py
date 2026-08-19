@@ -185,7 +185,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Step 6: ACTIVE Chat Mode using Official Gemini Chats API
     elif state == "ACTIVE":
         if user_id not in CHAT_SESSIONS:
-            # Recreate chat session silently without restarting setup wizard
             await recreate_chat_session(user_id)
             
         try:
@@ -224,11 +223,12 @@ CRITICAL STYLE & ANTI-LOOP RULES:
 5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
 """
 
+    # Using string-based safety configuration to bypass SDK enum attribute mismatches
     safety_config = [
-        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
     
     chat = gemini_client.chats.create(
