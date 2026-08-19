@@ -37,24 +37,20 @@ user_sessions = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Initialize session for multi-step input
+    # Initialize session for Step 1
     user_sessions[user_id] = {
-        "step": "persona",
+        "step": "SETTING_PERSONA",
         "persona": "",
         "scenario": "",
-        "rules": (
-            "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
-            "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she adjusts her glasses`).\n"
-            "3. Spoken dialogue in normal text or double quotes.\n"
-            "4. Maintain character immersion strictly at all times without breaking character."
-        ),
+        "rules": "",
+        "photo_file_id": None,
         "user_name": update.effective_user.first_name or "Student",
         "chat_session": None,
     }
 
     await update.message.reply_text(
-        "👋 **Welcome to the Interactive Roleplay Bot Setup!**\n\n"
-        "Step 1: Send your **Character Persona**.\n"
+        "👋 **Welcome to the Advanced Roleplay Bot Setup!**\n\n"
+        "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
         "*(Aap jitne chahein utne messages mein lamba description bhej sakte hain.)*\n"
         "Jab complete ho jaye, tab **`/done`** type karein."
     )
@@ -113,7 +109,7 @@ async def initialize_active_session(update: Update, session: dict):
         await update.message.reply_text(f"⚠️ Error creating chat session: {e}")
         return
 
-    session["step"] = "active"
+    session["step"] = "ACTIVE"
     await update.message.reply_text(
         "🎉 **Setup Complete! Roleplay is now ACTIVE.**\n"
         "Generating opening sequence..."
@@ -140,7 +136,6 @@ async def initialize_active_session(update: Update, session: dict):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text.strip()
 
     if user_id not in user_sessions:
         await update.message.reply_text("⚠️ No active setup found. Please type /start to begin.")
@@ -149,64 +144,119 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = user_sessions[user_id]
     step = session.get("step")
 
-    # Step 1: Persona collection (Multiple messages supported via /done)
-    if step == "persona":
-        if text.lower() == "/done":
-            if not session["persona"].strip():
-                await update.message.reply_text("⚠️ Please send some persona text before typing /done.")
-                return
-            session["step"] = "scenario"
-            await update.message.reply_text(
-                "✅ **Persona Saved!**\n\n"
-                "Step 2: Send the **Starting Scenario**.\n"
-                "*(Aap multiple messages mein scenario bhej sakte hain)*\n"
-                "Jab complete ho jaye, tab **`/done`** type karein."
-            )
-            return
-        else:
-            session["persona"] += "\n" + text if session["persona"] else text
-            await update.message.reply_text("📥 Persona chunk added. Send more text or type **/done** to proceed.")
-            return
-
-    # Step 2: Scenario collection (Multiple messages supported via /done)
-    elif step == "scenario":
-        if text.lower() == "/done":
-            if not session["scenario"].strip():
-                await update.message.reply_text("⚠️ Please send some scenario text before typing /done.")
-                return
-            session["step"] = "name_input"
-            await update.message.reply_text(
-                "✅ **Scenario Saved!**\n\n"
-                "Step 3: What is **your name** for the story? (e.g. Anurag)\n"
-                "Type your name and send it."
-            )
-            return
-        else:
-            session["scenario"] += "\n" + text if session["scenario"] else text
-            await update.message.reply_text("📥 Scenario chunk added. Send more text or type **/done** to proceed.")
-            return
-
-    # Step 3: Taking User Name and Launching Session
-    elif step == "name_input":
-        session["user_name"] = text
-        await initialize_active_session(update, session)
+    # Handle Photo Input specially in Step 4
+    if step == "SETTING_PHOTO" and update.message.photo:
+        photo_file = update.message.photo[-1].file_id
+        session["photo_file_id"] = photo_file
+        session["step"] = "SETTING_USERNAME"
+        
+        await update.message.reply_photo(
+            photo=photo_file,
+            caption="🖼 📸 **Character Photo Received & Locked!**\n\n"
+                    "**Step 5 (SETTING_USERNAME):** What is **your name** for the story? (e.g. Anurag)\n"
+                    "Type your name and send it."
+        )
         return
 
-    # Active Chat Mode
-    chat = session.get("chat_session")
-    if not chat:
-        await update.message.reply_text("⚠️ Session error detected. Please type /reset to start over.")
-        return
+    # Text message handling
+    if update.message.text:
+        text = update.message.text.strip()
 
-    try:
-        response = chat.send_message(text)
-        if response and response.text:
-            await update.message.reply_text(response.text)
-        else:
-            await update.message.reply_text("`She raises an eyebrow, waiting for you to elaborate...`")
-    except Exception as e:
-        logger.error(f"Error during chat: {e}")
-        await update.message.reply_text(f"⚠️ An error occurred: {e}\nPlease type /reset to restart.")
+        # Step 1: SETTING_PERSONA
+        if step == "SETTING_PERSONA":
+            if text.lower() == "/done":
+                if not session["persona"].strip():
+                    await update.message.reply_text("⚠️ Persona khali hai, pehle description bhejein.")
+                    return
+                session["step"] = "SETTING_SCENARIO"
+                await update.message.reply_text(
+                    "✅ **Persona Saved!**\n\n"
+                    "**Step 2 (SETTING_SCENARIO):** Send the **Starting Scenario**.\n"
+                    "*(Multiple messages mein bhej sakte hain, khatam hone par `/done` likhein)*"
+                )
+                return
+            else:
+                session["persona"] += "\n" + text if session["persona"] else text
+                await update.message.reply_text("📥 Persona chunk added. Send more text or type **/done** to proceed.")
+                return
+
+        # Step 2: SETTING_SCENARIO
+        elif step == "SETTING_SCENARIO":
+            if text.lower() == "/done":
+                if not session["scenario"].strip():
+                    await update.message.reply_text("⚠️ Scenario khali hai, pehle description bhejein.")
+                    return
+                session["step"] = "SETTING_RULES"
+                await update.message.reply_text(
+                    "✅ **Scenario Saved!**\n\n"
+                    "**Step 3 (SETTING_RULES):** Send additional rules or constraints (e.g., Hinglish language, backtick actions, tone guidelines).\n"
+                    "*(Multiple messages mein bhej sakte hain, khatam hone par `/done` likhein)*"
+                )
+                return
+            else:
+                session["scenario"] += "\n" + text if session["scenario"] else text
+                await update.message.reply_text("📥 Scenario chunk added. Send more text or type **/done** to proceed.")
+                return
+
+        # Step 3: SETTING_RULES
+        elif step == "SETTING_RULES":
+            if text.lower() == "/done":
+                if not session["rules"].strip():
+                    # Default fallback rules if left empty
+                    session["rules"] = (
+                        "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
+                        "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks.\n"
+                        "3. Spoken dialogue in normal text or double quotes."
+                    )
+                session["step"] = "SETTING_PHOTO"
+                await update.message.reply_text(
+                    "✅ **Rules Saved!**\n\n"
+                    "**Step 4 (SETTING_PHOTO):** Send character photo now.\n"
+                    "👉 Agar photo skip karni hai, toh sirf **`none`** type karke bhej dein."
+                )
+                return
+            else:
+                session["rules"] += "\n" + text if session["rules"] else text
+                await update.message.reply_text("📥 Rules chunk added. Send more text or type **/done** to proceed.")
+                return
+
+        # Step 4: SETTING_PHOTO (Text choice 'none')
+        elif step == "SETTING_PHOTO":
+            if text.lower() == "none":
+                session["photo_file_id"] = None
+                session["step"] = "SETTING_USERNAME"
+                await update.message.reply_text(
+                    "⏭️ **Photo skipped.**\n\n"
+                    "**Step 5 (SETTING_USERNAME):** What is **your name** for the story? (e.g. Anurag)\n"
+                    "Type your name and send it."
+                )
+                return
+            else:
+                await update.message.reply_text("⚠️ Kripya character ki photo bhejein, ya skip karne ke liye **`none`** type karein.")
+                return
+
+        # Step 5: SETTING_USERNAME
+        elif step == "SETTING_USERNAME":
+            session["user_name"] = text
+            await initialize_active_session(update, session)
+            return
+
+        # Step 6: ACTIVE Chat Mode
+        elif step == "ACTIVE":
+            chat = session.get("chat_session")
+            if not chat:
+                await update.message.reply_text("⚠️ Session error detected! Please type /reset to start over.")
+                return
+            try:
+                response = chat.send_message(text)
+                if response and response.text:
+                    await update.message.reply_text(response.text)
+                else:
+                    await update.message.reply_text("`She waits for your response...`")
+            except Exception as e:
+                logger.error(f"Error during chat: {e}")
+                await update.message.reply_text(f"⚠️ An error occurred: {e}\nPlease type /reset to restart.")
+            return
 
 
 def main():
@@ -214,7 +264,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reset", reset_command))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
 
     logger.info("Bot is starting up...")
     application.run_polling()
