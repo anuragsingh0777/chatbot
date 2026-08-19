@@ -233,7 +233,7 @@ User's Name: {user_name}
 CRITICAL STYLE & ANTI-LOOP RULES:
 1. Language Style: Fluent Hinglish (natural mix of Hindi and English words/phrases).
 2. Action Length: Keep actions short, crisp, and punchy (e.g., `she leans against the desk, smirking`). Avoid unnecessarily long paragraphs. Keep the conversation moving fast.
-3. Formatting: Physical actions/movements MUST be enclosed in single backticks. Spoken dialogues in normal text or double quotes.
+3. Formatting: Physical actions/movements MUST be enclosed in single backticks. Spoken dialogues in normal text or double quotes. ALWAYS ensure every opening backtick or quote has a matching closing mark so sentences never get cut off.
 4. Always address and interact directly with the user as {user_name}.
 5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
 
@@ -258,7 +258,7 @@ ADULT / SEXTING RULES (MANDATORY - NEVER BREAK THESE):
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=0.95,
-            max_output_tokens=400,
+            max_output_tokens=600,
             safety_settings=safety_config
         )
     )
