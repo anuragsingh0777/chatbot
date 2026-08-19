@@ -213,7 +213,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             if not response.text:
-                raw_text = "`She smirks, adjusting her glasses as she waits for your reply.`"
+                raw_text = f"`She narrows her eyes slightly, looking at {user_data[user_id]['user_name']}. 'Speak up properly, don't waste my time.'`"
             else:
                 raw_text = response.text.strip()
                 
@@ -222,7 +222,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            fallback = "`She crosses her arms, raising an eyebrow at your delay.`"
+            fallback = f"`She taps her desk sharply, waiting for your actual response, {user_data[user_id]['user_name']}.`"
             USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
             await update.message.reply_text(fallback, parse_mode="Markdown")
 
@@ -244,11 +244,12 @@ async def initialize_active_session(update: Update, user_id: int):
 [User Information]
 User's Name: {user_name}
 
-CRITICAL STYLE & FORMATTING RULES:
+CRITICAL STYLE & ANTI-LOOP RULES:
 1. Language Style: Fluent Hinglish (natural mix of Hindi and English words/phrases).
-2. Action Length: Keep actions short, crisp, and punchy (e.g., `she leans against the desk, smirking`). Avoid unnecessarily long paragraphs of descriptions. Keep the conversation moving fast.
+2. Action Length: Keep actions short, crisp, and punchy (e.g., `she leans against the desk, smirking`). Avoid unnecessarily long paragraphs. Keep the conversation moving fast.
 3. Formatting: Physical actions/movements MUST be enclosed in single backticks. Spoken dialogues in normal text or double quotes.
-4. Always address and interact directly with the user as {user_name}. Maintain high tension and absolute character immersion without breaking character.
+4. Always address and interact directly with the user as {user_name}.
+5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
 """
 
     USER_MEMORIES[user_id] = []
