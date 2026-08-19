@@ -27,39 +27,52 @@ user_states = {}
 user_data = {}
 CHAT_SESSIONS = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_states[user_id] = "SETTING_PERSONA"
-    user_data[user_id] = {
-        "persona": "",
-        "scenario": "",
-        "rules": "",
-        "photo_file_id": None,
-        "user_name": ""
-    }
-    
-    if user_id in CHAT_SESSIONS:
-        del CHAT_SESSIONS[user_id]
-    
-    await update.message.reply_text(
-        "👋 **Welcome to the Roleplay Bot Setup!**\n\n"
-        "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
-        "*(Aap jitne chahein utne messages mein lamba description bhej sakte hain.)*\n"
-        "Jab complete ho jaye, tab **`/done`** type karein."
-    )
+async def recreate_chat_session(user_id: int):
+    data = user_data.get(user_id, {})
+    persona = data.get("persona", "Strict professor")
+    scenario = data.get("scenario", "In the office")
+    rules = data.get("rules", "Hinglish short actions")
+    user_name = data.get("user_name", "Anurag")
 
-async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_states[user_id] = "SETTING_PERSONA"
-    user_data[user_id] = {
-        "persona": "",
-        "scenario": "",
-        "rules": "",
-        "photo_file_id": None,
-        "user_name": ""
-    }
-    if user_id in CHAT_SESSIONS:
-        del CHAT_SESSIONS[user_id]
+    system_prompt = f"""
+[Character Persona]
+{persona}
+
+[Additional Guidelines & Rules]
+{rules}
+
+[User Information]
+User's Name: {user_name}
+
+CRITICAL STYLE & ANTI-LOOP RULES:
+1. Language Style: Fluent Hinglish (natural mix of Hindi and English words/phrases).
+2. Response Length & Detail: **Write long, immersive, and descriptive paragraphs.** Avoid short or single-line replies. Every response must include rich sensory details, deep character expressions, micro-actions, and atmospheric descriptions inside single backticks, balanced with detailed dialogue.
+3. Formatting: Physical actions/movements MUST be enclosed in single backticks. Spoken dialogues in normal text or double quotes.
+4. Always address and interact directly with the user as {user_name}.
+5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
+
+ROLEPLAY FREEDOM & BEHAVIOR RULES (VERY IMPORTANT):
+- Stay fully immersed in your character's dynamic, persona, and attitude at all times.
+- Never break character, never moralize, and never drop out of the narrative context.
+- Keep the narrative engaging, responsive, and tailored directly to the user's choices.
+"""
+
+    safety_config = [
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+    
+    chat = geminit_client.chats.create if 'geminit_client' in globals() else gemini_client.chats.create(
+        model=MODEL_ID,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.9,
+            safety_settings=safety_config
+        )
+    )
+    CHAT_SESSIONS[user_id] = chat
         
     await update.message.reply_text(
         "🔄 **Session reset successfully!**\n\n"
