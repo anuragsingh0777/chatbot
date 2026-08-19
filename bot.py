@@ -185,8 +185,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Step 6: ACTIVE Chat Mode using Official Gemini Chats API
     elif state == "ACTIVE":
         if user_id not in CHAT_SESSIONS:
-            await initialize_active_session(update, user_id)
-            return
+            # Recreate chat session silently without restarting setup wizard
+            await recreate_chat_session(user_id)
             
         try:
             chat = CHAT_SESSIONS[user_id]
@@ -199,13 +199,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error generating response: {e}")
             await update.message.reply_text(f"`She taps her desk sharply, looking straight at {user_data[user_id]['user_name']}. 'Say that again.'`", parse_mode="Markdown")
 
-async def initialize_active_session(update: Update, user_id: int):
-    data = user_data[user_id]
-    persona = data["persona"]
-    scenario = data["scenario"]
-    rules = data["rules"]
-    user_name = data["user_name"]
-    photo_id = data["photo_file_id"]
+async def recreate_chat_session(user_id: int):
+    data = user_data.get(user_id, {})
+    persona = data.get("persona", "Strict professor")
+    scenario = data.get("scenario", "In the office")
+    rules = data.get("rules", "Hinglish short actions")
+    user_name = data.get("user_name", "Anurag")
 
     system_prompt = f"""
 [Character Persona]
@@ -225,6 +224,29 @@ CRITICAL STYLE & ANTI-LOOP RULES:
 5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
 """
 
+    safety_config = [
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+    ]
+    
+    chat = gemini_client.chats.create(
+        model=MODEL_ID,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.9,
+            safety_settings=safety_config
+        )
+    )
+    CHAT_SESSIONS[user_id] = chat
+
+async def initialize_active_session(update: Update, user_id: int):
+    data = user_data[user_id]
+    scenario = data["scenario"]
+    user_name = data["user_name"]
+    photo_id = data["photo_file_id"]
+
     try:
         await update.message.reply_text("🚀 Setup complete! Launching roleplay...")
         
@@ -234,29 +256,15 @@ CRITICAL STYLE & ANTI-LOOP RULES:
                 caption=f"✨ **Character Initialized**\nUser: {user_name}"
             )
 
-        safety_config = [
-            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-            types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-        ]
-        
-        # Initialize official chat session using chats.create
-        chat = gemini_client.chats.create(
-            model=MODEL_ID,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.9,
-                safety_settings=safety_config
-            )
-        )
-        CHAT_SESSIONS[user_id] = chat
+        # Initialize the chat session
+        await recreate_chat_session(user_id)
+        chat = CHAT_SESSIONS[user_id]
 
         intro_msg = f"*(Scene starts: {scenario})* Begin the roleplay addressing {user_name} with your signature tone and short actions."
         response = chat.send_message(intro_msg)
         
         raw_text = response.text.strip() if response.text else f"`She glances up from her desk, her gaze locking onto {user_name}. 'Late again?'`"
-        await update.message.reply_text(raw_text, parse_Mode="Markdown")
+        await update.message.reply_text(raw_text, parse_mode="Markdown")
         
     except Exception as e:
         logger.error(f"Error starting chat: {e}")
