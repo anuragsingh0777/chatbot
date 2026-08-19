@@ -19,7 +19,8 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN/TELEGRAM_BOT_TOKEN or GEMINI_API_KEY in environment variables.")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-2.5-flash"
+# Updated to the latest required model ID
+MODEL_ID = "gemini-3.6-flash"
 
 # User state storage
 user_states = {}
@@ -195,8 +196,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(raw_text, parse_mode="Markdown")
             
         except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            await update.message.reply_text(f"`She taps her desk sharply, looking straight at {user_data[user_id]['user_name']}. 'Say that again.'`", parse_mode="Markdown")
+            logger.error(f"DETAILED GEMINI ERROR: {str(e)}", exc_info=True)
+            await update.message.reply_text(f"`She narrows her eyes at {user_data[user_id]['user_name']}. 'Let's try that input again, focus.'`", parse_mode="Markdown")
 
 async def recreate_chat_session(user_id: int):
     data = user_data.get(user_id, {})
@@ -223,7 +224,6 @@ CRITICAL STYLE & ANTI-LOOP RULES:
 5. NEVER repeat previous dialogue or actions. Always respond dynamically and creatively to the user's latest input.
 """
 
-    # Using string-based safety configuration to bypass SDK enum attribute mismatches
     safety_config = [
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -267,7 +267,7 @@ async def initialize_active_session(update: Update, user_id: int):
         await update.message.reply_text(raw_text, parse_mode="Markdown")
         
     except Exception as e:
-        logger.error(f"Error starting chat: {e}")
+        logger.error(f"Error starting chat: {e}", exc_info=True)
         await update.message.reply_text(f"`She looks up, waiting for you to begin, {user_name}.`", parse_mode="Markdown")
 
 def main():
