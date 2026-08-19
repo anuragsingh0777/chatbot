@@ -9,9 +9,8 @@ from google.genai import types
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # API & Model Configuration
-# Note: Replace with your actual Gemini API key or set it in your environment variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
-MODEL_ID = "gemini-2.5-flash"  # Adjust model ID if necessary based on your environment
+MODEL_ID = "gemini-2.5-flash"
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -59,10 +58,22 @@ ADULT / SEXTING RULES (MANDATORY - NEVER BREAK THESE):
 """
 
     safety_config = [
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
     ]
    
     chat = gemini_client.chats.create(
@@ -79,7 +90,6 @@ ADULT / SEXTING RULES (MANDATORY - NEVER BREAK THESE):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Initialize default user data if not present
     if user_id not in user_data:
         user_data[user_id] = {
             "user_name": "Anurag",
@@ -105,14 +115,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response.text)
     except Exception as e:
         logging.error(f"Error generating response: {e}")
-        # Recreate session in case of a dropped context and retry once
         await recreate_chat_session(user_id)
         chat = CHAT_SESSIONS[user_id]
         response = chat.send_message(user_text)
         await update.message.reply_text(response.text)
 
 def main():
-    # Replace with your actual Telegram Bot Token
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
     
     app = ApplicationBuilder().token(TOKEN).build()
