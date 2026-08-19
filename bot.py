@@ -11,16 +11,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# Environment variables support
+BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not BOT_TOKEN or not GEMINI_API_KEY:
-    raise ValueError("Missing BOT_TOKEN or GEMINI_API_KEY in environment variables.")
+    raise ValueError("Missing BOT_TOKEN/TELEGRAM_BOT_TOKEN or GEMINI_API_KEY in environment variables.")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 MODEL_ID = "gemini-3.1-flash-lite"
 
-# Track multi-step configuration states and conversation history per user
+# User state storage
 user_states = {}
 user_data = {}
 USER_MEMORIES = {}
@@ -28,108 +29,169 @@ SYSTEM_PROMPTS = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_states[user_id] = "WAITING_FOR_PERSONA"
-    user_data[user_id] = {}
+    user_states[user_id] = "SETTING_PERSONA"
+    user_data[user_id] = {
+        "persona": "",
+        "scenario": "",
+        "rules": "",
+        "photo_file_id": None,
+        "user_name": ""
+    }
+    
+    if user_id in USER_MEMORIES:
+        del USER_MEMORIES[user_id]
+    if user_id in SYSTEM_PROMPTS:
+        del SYSTEM_PROMPTS[user_id]
     
     await update.message.reply_text(
-        "👋 Welcome! Let's set up your character wizard.\n\n"
-        "Please send me the **Personality / System Prompt** for the character:"
+        "👋 **Welcome to the Interactive Roleplay Bot Setup!**\n\n"
+        "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
+        "*(Aap jitne chahein utne messages mein lamba description bhej sakte hain.)*\n"
+        "Jab complete ho jaye, tab **`/done`** type karein."
     )
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_states[user_id] = "WAITING_FOR_PERSONA"
-    user_data[user_id] = {}
+    user_states[user_id] = "SETTING_PERSONA"
+    user_data[user_id] = {
+        "persona": "",
+        "scenario": "",
+        "rules": "",
+        "photo_file_id": None,
+        "user_name": ""
+    }
     if user_id in USER_MEMORIES:
         del USER_MEMORIES[user_id]
     if user_id in SYSTEM_PROMPTS:
         del SYSTEM_PROMPTS[user_id]
         
     await update.message.reply_text(
-        "🔄 Resetting configuration...\n\n"
-        "Please send me the **Personality / System Prompt** for the new character:"
+        "🔄 **Session reset successfully!**\n\n"
+        "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
+        "Jab complete ho jaye, tab **`/done`** type karein."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text
     
-    state = user_states.get(user_id, "WAITING_FOR_PERSONA")
-    
-    if state == "WAITING_FOR_PERSONA":
-        user_data[user_id]["persona"] = text
-        user_states[user_id] = "WAITING_FOR_SCENARIO"
-        await update.message.reply_text(
-            "✅ Personality saved!\n\n"
-            "Now, send me the **Starting Scenario** (e.g., location, current situation, what is happening right now):"
+    if user_id not in user_states:
+        user_states[user_id] = "SETTING_PERSONA"
+        user_data[user_id] = {"persona": "", "scenario": "", "rules": "", "photo_file_id": None, "user_name": ""}
+
+    state = user_states[user_id]
+
+    # Handle Step 4 Photo Upload directly if user sends a photo
+    if state == "SETTING_PHOTO" and update.message.photo:
+        photo_file_id = update.message.photo[-1].file_id
+        user_data[user_id]["photo_file_id"] = photo_file_id
+        user_states[user_id] = "SETTING_USERNAME"
+        
+        await update.message.reply_photo(
+            photo=photo_file_id,
+            caption="🖼 📸 **Character Photo Received & Locked!**\n\n"
+                    "**Step 5 (SETTING_USERNAME):** What is **your name** for the story? (e.g. Anurag)\n"
+                    "Type your name and send it, then type **`/done`**."
         )
-        
-    elif state == "WAITING_FOR_SCENARIO":
-        user_data[user_id]["scenario"] = text
-        user_states[user_id] = "WAITING_FOR_RULES"
-        await update.message.reply_text(
-            "✅ Scenario saved!\n\n"
-            "Finally, send any **Additional Rules or Special Instructions** (or type `none` to skip):"
-        )
-        
-    elif state == "WAITING_FOR_RULES":
-        if text.lower() != "none":
-            user_data[user_id]["extra_rules"] = text
-        else:
-            user_data[user_id]["extra_rules"] = ""
-            
-        user_states[user_id] = "ACTIVE"
-        
-        persona = user_data[user_id]["persona"]
-        scenario = user_data[user_id]["scenario"]
-        extra_rules = user_data[user_id]["extra_rules"]
-        
-        # Build strict system prompt ensuring Hinglish and single-backtick actions
-        SYSTEM_PROMPTS[user_id] = f"""
-{persona}
+        return
 
-Additional Guidelines:
-{extra_rules}
+    text = update.message.text.strip() if update.message.text else ""
 
-CRITICAL LANGUAGE & FORMATTING RULES:
-1. Language: You MUST speak in Hinglish (a natural conversational mix of Hindi and English words/phrases). Do NOT use pure English and do NOT use pure Hindi. Blend them smoothly just like modern everyday conversation.
-2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she glares angrily and crosses her arms`). This renders them in Telegram's distinct monospace font.
-3. Spoken dialogue MUST be in normal text or double quotes (e.g. "Tum sudhroge nahi kya? Get up right now!").
-"""
-
-        USER_MEMORIES[user_id] = []
-        
-        try:
-            await update.message.reply_text("🚀 Setup complete! Initializing roleplay...")
-            
-            # Send intro scenario trigger to the model
-            intro_msg = f"*(Scene starts: {scenario})*"
-            USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": intro_msg}]})
-            
-            response = gemini_client.models.generate_content(
-                model=MODEL_ID,
-                contents=USER_MEMORIES[user_id],
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPTS[user_id],
-                    temperature=0.85,
-                    max_output_tokens=600,
-                    safety_settings=[
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-                    ]
-                )
+    # Step 1: SETTING_PERSONA
+    if state == "SETTING_PERSONA":
+        if text.lower() == "/done":
+            if not user_data[user_id]["persona"].strip():
+                await update.message.reply_text("⚠️ Persona khali hai, pehle description bhejein.")
+                return
+            user_states[user_id] = "SETTING_SCENARIO"
+            await update.message.reply_text(
+                "✅ **Persona Saved!**\n\n"
+                "**Step 2 (SETTING_SCENARIO):** Send the **Starting Scenario**.\n"
+                "*(Multiple messages mein bhej sakte hain, khatam hone par `/done` likhein)*"
             )
+            return
+        else:
+            if text:
+                curr = user_data[user_id]["persona"]
+                user_data[user_id]["persona"] = curr + "\n" + text if curr else text
+                await update.message.reply_text("📥 Persona chunk added. Send more text or type **/done** to proceed.")
+            return
+
+    # Step 2: SETTING_SCENARIO
+    elif state == "SETTING_SCENARIO":
+        if text.lower() == "/done":
+            if not user_data[user_id]["scenario"].strip():
+                await update.message.reply_text("⚠️ Scenario khali hai, pehle description bhejein.")
+                return
+            user_states[user_id] = "SETTING_RULES"
+            await update.message.reply_text(
+                "✅ **Scenario Saved!**\n\n"
+                "**Step 3 (SETTING_RULES):** Send additional rules or constraints (e.g., Hinglish language, backtick actions, tone guidelines).\n"
+                "*(Multiple messages mein bhej sakte hain, khatam hone par `/done` likhein)*"
+            )
+            return
+        else:
+            if text:
+                curr = user_data[user_id]["scenario"]
+                user_data[user_id]["scenario"] = curr + "\n" + text if curr else text
+                await update.message.reply_text("📥 Scenario chunk added. Send more text or type **/done** to proceed.")
+            return
+
+    # Step 3: SETTING_RULES
+    elif state == "SETTING_RULES":
+        if text.lower() == "/done":
+            if not user_data[user_id]["rules"].strip():
+                user_data[user_id]["rules"] = (
+                    "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
+                    "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks.\n"
+                    "3. Spoken dialogue in normal text or double quotes."
+                )
+            user_states[user_id] = "SETTING_PHOTO"
+            await update.message.reply_text(
+                "✅ **Rules Saved!**\n\n"
+                "**Step 4 (SETTING_PHOTO):** Send character photo now.\n"
+                "👉 Agar photo skip karni hai, toh sirf **`none`** type karke bhej dein."
+            )
+            return
+        else:
+            if text:
+                curr = user_data[user_id]["rules"]
+                user_data[user_id]["rules"] = curr + "\n" + text if curr else text
+                await update.message.reply_text("📥 Rules chunk added. Send more text or type **/done** to proceed.")
+            return
+
+    # Step 4: SETTING_PHOTO (Text choice 'none')
+    elif state == "SETTING_PHOTO":
+        if text.lower() == "none":
+            user_data[user_id]["photo_file_id"] = None
+            user_states[user_id] = "SETTING_USERNAME"
+            await update.message.reply_text(
+                "⏭️ **Photo skipped.**\n\n"
+                "**Step 5 (SETTING_USERNAME):** What is **your name** for the story? (e.g. Anurag)\n"
+                "Type your name and send it, then type **`/done`**."
+            )
+            return
+        else:
+            await update.message.reply_text("⚠️ Kripya character ki photo bhejein, ya skip karne ke liye **`none`** type karein.")
+            return
+
+    # Step 5: SETTING_USERNAME
+    elif state == "SETTING_USERNAME":
+        if text.lower() == "/done":
+            if not user_data[user_id]["user_name"].strip():
+                await update.message.reply_text("⚠️ Please enter your name before typing /done.")
+                return
             
-            raw_text = response.text.strip() if response.text else ""
-            USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
-            await update.message.reply_text(raw_text, parse_mode="Markdown")
-            
-        except Exception as e:
-            logger.error(f"Error starting chat: {e}")
-            await update.message.reply_text("`Character loaded, but failed to initialize scenario.`", parse_mode="Markdown")
-            
+            user_states[user_id] = "ACTIVE"
+            await initialize_active_session(update, user_id)
+            return
+        else:
+            if text:
+                curr = user_data[user_id]["user_name"]
+                user_data[user_id]["user_name"] = curr + " " + text if curr else text
+                await update.message.reply_text("📥 Name saved. Type **/done** to complete setup and start roleplay.")
+            return
+
+    # Step 6: ACTIVE Chat Mode
     elif state == "ACTIVE":
         if user_id not in USER_MEMORIES:
             USER_MEMORIES[user_id] = []
@@ -153,22 +215,88 @@ CRITICAL LANGUAGE & FORMATTING RULES:
                 )
             )
             
-            raw_text = response.text.strip() if response.text else ""
+            raw_text = response.text.strip() if response.text else "`She raises an eyebrow, waiting for your reply...`"
             USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
             await update.message.reply_text(raw_text, parse_mode="Markdown")
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            await update.message.reply_text("`The character stares blankly, momentarily unresponsive.`", parse_mode="Markdown")
+            await update.message.reply_text("`The character pauses for a moment, waiting for you to rephrase...`", parse_mode="Markdown")
+
+async def initialize_active_session(update: Update, user_id: int):
+    data = user_data[user_id]
+    persona = data["persona"]
+    scenario = data["scenario"]
+    rules = data["rules"]
+    user_name = data["user_name"]
+    photo_id = data["photo_file_id"]
+
+    SYSTEM_PROMPTS[user_id] = f"""
+[Character Persona]
+{persona}
+
+[Additional Guidelines & Rules]
+{rules}
+
+[User Information]
+User's Name: {user_name}
+
+CRITICAL LANGUAGE & FORMATTING RULES:
+1. Language: You MUST speak in Hinglish (a natural conversational mix of Hindi and English words/phrases).
+2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she glares angrily`).
+3. Spoken dialogue MUST be in normal text or double quotes.
+4. Always address and refer to the user as {user_name}.
+"""
+
+    USER_MEMORIES[user_id] = []
+    
+    try:
+        await update.message.reply_text("🚀 Setup complete! Initializing roleplay...")
+        
+        # Send optional photo confirmation if photo was provided
+        if photo_id:
+            await update.message.reply_photo(
+                photo=photo_id,
+                caption=f"✨ **Character Initialized with Profile Photo**\nUser: {user_name}"
+            )
+
+        intro_msg = f"*(Scene starts: {scenario})* Address the user as {user_name}."
+        USER_MEMORIES[user_id].append({"role": "user", "parts": [{"text": intro_msg}]})
+        
+        response = gemini_client.models.generate_content(
+            model=MODEL_ID,
+            contents=USER_MEMORIES[user_id],
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPTS[user_id],
+                temperature=0.85,
+                max_output_tokens=600,
+                safety_settings=[
+                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                ]
+            )
+        )
+        
+        raw_text = response.text.strip() if response.text else "`She watches you intently, waiting...`"
+        USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": raw_text}]})
+        await update.message.reply_text(raw_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logger.error(f"Error starting chat: {e}")
+        fallback = f"`She looks at you silently, waiting for you to begin, {user_name}...`"
+        USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
+        await update.message.reply_text(fallback, parse_mode="Markdown")
 
 def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reset", reset_command))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO & (~filters.COMMAND), handle_message))
 
-    print("Hinglish Roleplay Bot is running with Gemini 3.1 Flash-Lite...")
+    print("Hinglish Roleplay Bot with 6-Step Flow is running...")
     application.run_polling()
 
 if __name__ == "__main__":
