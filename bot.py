@@ -19,7 +19,7 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN/TELEGRAM_BOT_TOKEN or GEMINI_API_KEY in environment variables.")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-3.1-flash-lite"
+MODEL_ID = "gemini-2.5-flash"  # Updated to a stable, highly efficient model ID
 
 # User state storage
 user_states = {}
@@ -213,7 +213,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             if not response.text:
-                raw_text = f"`She narrows her eyes slightly, looking at {user_data[user_id]['user_name']}. 'Speak up properly, don't waste my time.'`"
+                raw_text = f"`She glares at {user_data[user_id]['user_name']} briefly, raising an eyebrow.`"
             else:
                 raw_text = response.text.strip()
                 
@@ -222,7 +222,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            fallback = f"`She taps her desk sharply, waiting for your actual response, {user_data[user_id]['user_name']}.`"
+            fallback = f"`She watches {user_data[user_id]['user_name']} closely, waiting for a clearer response.`"
             USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
             await update.message.reply_text(fallback, parse_mode="Markdown")
 
@@ -289,7 +289,7 @@ CRITICAL STYLE & ANTI-LOOP RULES:
         
     except Exception as e:
         logger.error(f"Error starting chat: {e}")
-        fallback = f"`She taps her pen against the wood, waiting for you to speak, {user_name}.`"
+        fallback = f"`She looks up, waiting for you to begin, {user_name}.`"
         USER_MEMORIES[user_id].append({"role": "model", "parts": [{"text": fallback}]})
         await update.message.reply_text(fallback, parse_mode="Markdown")
 
