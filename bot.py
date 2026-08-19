@@ -20,7 +20,7 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Using stable 3.6 flash model
+# Using stable 3.6 flash model as requested
 MODEL_ID = "gemini-3.6-flash"
 
 # User state storage
@@ -184,9 +184,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = chat.send_message(text)
             
             raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
-            raw_text = sanitize_output(raw_text)  # Sanitize output here
+            raw_text = sanitize_output(raw_text)
             
-            await update.message.reply_text(raw_text)
+            await update.message.reply_text(raw_text, parse_mode='Markdown')
 
         except Exception as e:
             logger.error(f"DETAILED GEMINI ERROR: {str(e)}", exc_info=True)
@@ -198,9 +198,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 response = chat.send_message(text)
                 
                 raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
-                raw_text = sanitize_output(raw_text) # Sanitize output here
+                raw_text = sanitize_output(raw_text)
                 
-                await update.message.reply_text(raw_text)
+                await update.message.reply_text(raw_text, parse_mode='Markdown')
             except Exception as e2:
                 logger.error(f"Retry also failed: {e2}", exc_info=True)
                 await update.message.reply_text(f"❌ Retry failed. Please type /reset to restart.")
@@ -250,7 +250,7 @@ ADULT / SEXTING RULES (MANDATORY - NEVER BREAK THESE):
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=0.9,
-            max_output_tokens=8192,  # Massively increased tokens
+            max_output_tokens=8192,
             safety_settings=safety_config
         )
     )
@@ -278,20 +278,20 @@ async def initialize_active_session(update: Update, user_id: int):
         response = chat.send_message(intro_msg)
 
         raw_text = response.text.strip() if response.text else f"`She glances up from her desk, her gaze locking onto {user_name}.` \"Late again?\""
-        raw_text = sanitize_output(raw_text) # Sanitize output here
+        raw_text = sanitize_output(raw_text)
         
-        await update.message.reply_text(raw_text)
+        await update.message.reply_text(raw_text, parse_mode='Markdown')
 
     except Exception as e:
         logger.error(f"Error starting chat: {e}", exc_info=True)
-        await update.message.reply_text(f"`She looks up, waiting for you to begin, {user_name}.`")
+        await update.message.reply_text(f"`She looks up, waiting for you to begin, {user_name}.`", parse_mode='Markdown')
 
 def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO & (~filters.COMMAND), handle_message))
-    print("Bot is running successfully with Anti-Cutoff Fixes...")
+    print("Bot is running successfully with gemini-3.6-flash and Markdown enabled...")
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
