@@ -194,6 +194,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = chat.send_message(text)
 
             raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
+            if raw_text.count('`') % 2 != 0:
+                raw_text += '`'
             await update.message.reply_text(raw_text)
 
         except Exception as e:
@@ -206,6 +208,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat = CHAT_SESSIONS[user_id]
                 response = chat.send_message(text)
                 raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
+                if raw_text.count('`') % 2 != 0:
+                    raw_text += '`'
                 await update.message.reply_text(raw_text)
             except Exception as e2:
                 logger.error(f"Retry also failed: {e2}", exc_info=True)
@@ -286,6 +290,8 @@ async def initialize_active_session(update: Update, user_id: int):
         response = chat.send_message(intro_msg)
 
         raw_text = response.text.strip() if response.text else f"`She glances up from her desk, her gaze locking onto {user_name}. 'Late again?'`"
+        if raw_text.count('`') % 2 != 0:
+            raw_text += '`'
         await update.message.reply_text(raw_text)
 
     except Exception as e:
