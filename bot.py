@@ -184,7 +184,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("📥 Name saved. Type **/done** to complete setup and start roleplay.")
             return
 
-    # Step 6: ACTIVE Chat Mode
+        # Step 6: ACTIVE Chat Mode
     elif state == "ACTIVE":
         if user_id not in CHAT_SESSIONS:
             await recreate_chat_session(user_id)
@@ -198,7 +198,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
          
         except Exception as e:
             logger.error(f"DETAILED GEMINI ERROR: {str(e)}", exc_info=True)
-            await update.message.reply_text(f"`She narrows her eyes at {user_data[user_id]['user_name']}. 'Let's try that input again, focus.'`", parse_mode="Markdown")
+            
+            # Real error user ko dikhao (debugging ke liye)
+            await update.message.reply_text(f"⚠️ Error: `{str(e)[:300]}`", parse_mode="Markdown")
+            
+            # Session recreate karke ek baar retry
+            try:
+                await recreate_chat_session(user_id)
+                chat = CHAT_SESSIONS[user_id]
+                response = chat.send_message(text)
+                raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
+                await update.message.reply_text(raw_text, parse_mode="Markdown")
+            except Exception as e2:
+                logger.error(f"Retry also failed: {e2}", exc_info=True)
+                await update.message.reply_text(f"❌ Retry failed: `{str(e2)[:200]}`", parse_mode="Markdown")
 
 async def recreate_chat_session(user_id: int):
     data = user_data.get(user_id, {})
