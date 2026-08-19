@@ -250,7 +250,7 @@ ADULT / SEXTING RULES (MANDATORY - NEVER BREAK THESE):
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=0.9,
-            max_output_tokens=2500,  # Massively increased tokens
+            max_output_tokens=8192,  # Massively increased tokens
             safety_settings=safety_config
         )
     )
