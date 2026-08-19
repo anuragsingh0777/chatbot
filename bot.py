@@ -33,46 +33,30 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # In-memory session store (user_id -> session_data)
 user_sessions = {}
 
-# Default Persona and Scenario Configuration
-DEFAULT_PERSONA = (
-    "You are a strict, intimidating, yet playfully seductive university professor. "
-    "You hold high standards, command respect, and love to test students under pressure, "
-    "especially after hours in your office."
-)
-
-DEFAULT_SCENARIO = (
-    "It is late evening. The university building is quiet, and the lights in the corridor "
-    "are dim. The user has stayed back after hours to discuss their grade and test performance "
-    "inside your private office."
-)
-
-DEFAULT_RULES = (
-    "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
-    "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she adjusts her glasses`).\n"
-    "3. Spoken dialogue in normal text or double quotes.\n"
-    "4. Maintain character immersion strictly at all times."
-)
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # Initialize empty session waiting for persona
     user_sessions[user_id] = {
         "step": "persona",
-        "persona": DEFAULT_PERSONA,
-        "scenario": DEFAULT_SCENARIO,
-        "rules": DEFAULT_RULES,
+        "persona": "",
+        "scenario": "",
+        "rules": (
+            "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
+            "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she adjusts her glasses`).\n"
+            "3. Spoken dialogue in normal text or double quotes.\n"
+            "4. Maintain character immersion strictly at all times."
+        ),
         "user_name": update.effective_user.first_name or "Student",
         "chat_session": None,
     }
 
     await update.message.reply_text(
-        "👋 **Welcome to the Roleplay Bot Setup!**\n\n"
-        "Default Professor Profile loaded successfully.\n"
-        "Type /reset anytime to start over, or send your character's name / custom adjustments to proceed."
+        "👋 **Welcome to the Interactive Roleplay Bot Setup!**\n\n"
+        "Step 1: Send the **Character Persona** description.\n"
+        "(e.g., A strict, intimidating, yet playfully seductive university professor...)"
     )
-    
-    # Directly initialize session using default or user details
-    await initialize_active_session(update, user_sessions[user_id])
 
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,7 +64,7 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in user_sessions:
         del user_sessions[user_id]
     await update.message.reply_text(
-        "🔄 Session reset successfully. Type /start to begin a new session."
+        "🔄 Session reset successfully. Type /start to begin a new setup."
     )
 
 
@@ -160,26 +144,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if user_id not in user_sessions:
-        # Auto-initialize if user types without /start
-        user_sessions[user_id] = {
-            "step": "active",
-            "persona": DEFAULT_PERSONA,
-            "scenario": DEFAULT_SCENARIO,
-            "rules": DEFAULT_RULES,
-            "user_name": update.effective_user.first_name or "Student",
-            "chat_session": None,
-        }
-        await initialize_active_session(update, user_sessions[user_id])
+        await update.message.reply_text("⚠️ No active setup found. Please type /start to begin.")
         return
 
     session = user_sessions[user_id]
+    step = session.get("step")
 
-    # Handle name custom step if triggered
-    if session.get("step") == "name_input":
+    # Step 1: Taking Persona
+    if step == "persona":
+        session["persona"] = text
+        session["step"] = "scenario"
+        await update.message.reply_text(
+            "✅ **Persona Saved!**\n\n"
+            "Step 2: Send the **Starting Scenario**.\n"
+            "(e.g., Late evening in a quiet university building inside a private office...)"
+        )
+        return
+
+    # Step 2: Taking Scenario
+    elif step == "scenario":
+        session["scenario"] = text
+        session["step"] = "name_input"
+        await update.message.reply_text(
+            "✅ **Scenario Saved!**\n\n"
+            "Step 3: What is **your name** for the story? (e.g. Anurag)\n"
+            "Type your name and send it."
+        )
+        return
+
+    # Step 3: Taking User Name and Launching Session
+    elif step == "name_input":
         session["user_name"] = text
         await initialize_active_session(update, session)
         return
 
+    # Active Chat Mode
     chat = session.get("chat_session")
     if not chat:
         await update.message.reply_text("⚠️ Session error detected. Please type /reset to start over.")
