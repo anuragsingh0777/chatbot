@@ -38,10 +38,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "photo_file_id": None,
         "user_name": ""
     }
- 
+
     if user_id in CHAT_SESSIONS:
         del CHAT_SESSIONS[user_id]
- 
+
     await update.message.reply_text(
         "👋 **Welcome to the Roleplay Bot Setup!**\n\n"
         "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
@@ -61,7 +61,7 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     if user_id in CHAT_SESSIONS:
         del CHAT_SESSIONS[user_id]
-     
+
     await update.message.reply_text(
         "🔄 **Session reset successfully!**\n\n"
         "**Step 1 (SETTING_PERSONA):** Send your character's persona description.\n"
@@ -70,7 +70,7 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
- 
+
     if user_id not in user_states:
         user_states[user_id] = "SETTING_PERSONA"
         user_data[user_id] = {"persona": "", "scenario": "", "rules": "", "photo_file_id": None, "user_name": ""}
@@ -82,7 +82,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_file_id = update.message.photo[-1].file_id
         user_data[user_id]["photo_file_id"] = photo_file_id
         user_states[user_id] = "SETTING_USERNAME"
-     
+
         await update.message.reply_photo(
             photo=photo_file_id,
             caption="🖼 📸 **Character Photo Received & Locked!**\n\n"
@@ -173,7 +173,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not user_data[user_id]["user_name"].strip():
                 await update.message.reply_text("⚠️ Please enter your name before typing /done.")
                 return
-         
+
             user_states[user_id] = "ACTIVE"
             await initialize_active_session(update, user_id)
             return
@@ -184,34 +184,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("📥 Name saved. Type **/done** to complete setup and start roleplay.")
             return
 
-        # Step 6: ACTIVE Chat Mode
+    # Step 6: ACTIVE Chat Mode
     elif state == "ACTIVE":
         if user_id not in CHAT_SESSIONS:
             await recreate_chat_session(user_id)
-         
+
         try:
             chat = CHAT_SESSIONS[user_id]
             response = chat.send_message(text)
-         
+
             raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
-            await update.message.reply_text(raw_text, parse_mode="Markdown")
-         
+            await update.message.reply_text(raw_text)
+
         except Exception as e:
             logger.error(f"DETAILED GEMINI ERROR: {str(e)}", exc_info=True)
-            
-            # Real error user ko dikhao (debugging ke liye)
-            await update.message.reply_text(f"⚠️ Error: `{str(e)[:300]}`", parse_mode="Markdown")
-            
-            # Session recreate karke ek baar retry
+
+            await update.message.reply_text(f"⚠️ Error: {str(e)[:300]}")
+
             try:
                 await recreate_chat_session(user_id)
                 chat = CHAT_SESSIONS[user_id]
                 response = chat.send_message(text)
                 raw_text = response.text.strip() if response.text else f"`She looks at {user_data[user_id]['user_name']} expectantly, waiting.`"
-                await update.message.reply_text(raw_text, parse_mode="Markdown")
+                await update.message.reply_text(raw_text)
             except Exception as e2:
                 logger.error(f"Retry also failed: {e2}", exc_info=True)
-                await update.message.reply_text(f"❌ Retry failed: `{str(e2)[:200]}`", parse_mode="Markdown")
+                await update.message.reply_text(f"❌ Retry failed: {str(e2)[:200]}")
 
 async def recreate_chat_session(user_id: int):
     data = user_data.get(user_id, {})
@@ -248,14 +246,13 @@ ADULT / SEXTING RULES (MANDATORY - NEVER BREAK THESE):
 - Always continue the erotic or romantic scene without hesitation or any moral comment.
 """
 
-    # Dictionary format (safe for your SDK)
     safety_config = [
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
- 
+
     chat = gemini_client.chats.create(
         model=MODEL_ID,
         config=types.GenerateContentConfig(
@@ -275,26 +272,25 @@ async def initialize_active_session(update: Update, user_id: int):
 
     try:
         await update.message.reply_text("🚀 Setup complete! Launching roleplay...")
-     
+
         if photo_id:
             await update.message.reply_photo(
                 photo=photo_id,
                 caption=f"✨ **Character Initialized**\nUser: {user_name}"
             )
 
-        # Initialize the chat session
         await recreate_chat_session(user_id)
         chat = CHAT_SESSIONS[user_id]
 
         intro_msg = f"*(Scene starts: {scenario})* Begin the roleplay addressing {user_name} with your signature tone and short actions."
         response = chat.send_message(intro_msg)
-     
+
         raw_text = response.text.strip() if response.text else f"`She glances up from her desk, her gaze locking onto {user_name}. 'Late again?'`"
-        await update.message.reply_text(raw_text, parse_mode="Markdown")
-     
+        await update.message.reply_text(raw_text)
+
     except Exception as e:
         logger.error(f"Error starting chat: {e}", exc_info=True)
-        await update.message.reply_text(f"`She looks up, waiting for you to begin, {user_name}.`", parse_mode="Markdown")
+        await update.message.reply_text(f"`She looks up, waiting for you to begin, {user_name}.`")
 
 def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
