@@ -11,126 +11,82 @@ from telegram.ext import (
 from google import genai
 from google.genai import types
 
-# 1. Suppress noisy httpx terminal logs
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# Logging setup
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
-# 2. Securely Initialize Google GenAI Client (Reads from Railway/Environment Variables)
-api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+# Retrieve API keys from environment variables
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
-    raise ValueError(
-        "API key is missing! Please set GEMINI_API_KEY in your Railway Variables."
-    )
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable missing!")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY environment variable missing!")
 
-client = genai.Client(api_key=api_key)
+# Initialize Gemini Client globally
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 3. Bot State Storage (Advanced Multi-Step Setup Wizard)
+# In-memory session store (user_id -> session_data)
 user_sessions = {}
 
-def get_or_create_session(user_id: int):
-    if user_id not in user_sessions:
-        user_sessions[user_id] = {
-            "state": "IDLE", # IDLE, SETTING_PERSONA, SETTING_SCENARIO, SETTING_RULES, SETTING_PHOTO, SETTING_USERNAME, ACTIVE
-            "persona": "",
-            "scenario": "",
-            "rules": "",
-            "char_photo_id": None,
-            "user_name": "Anurag", # Default fallback
-            "temp_buffer": [],
-            "chat_session": None,
-        }
-    return user_sessions[user_id]
+# Default Persona and Scenario Configuration
+DEFAULT_PERSONA = (
+    "You are a strict, intimidating, yet playfully seductive university professor. "
+    "You hold high standards, command respect, and love to test students under pressure, "
+    "especially after hours in your office."
+)
+
+DEFAULT_SCENARIO = (
+    "It is late evening. The university building is quiet, and the lights in the corridor "
+    "are dim. The user has stayed back after hours to discuss their grade and test performance "
+    "inside your private office."
+)
+
+DEFAULT_RULES = (
+    "1. Language: MUST speak in Hinglish (smooth mix of Hindi and English).\n"
+    "2. Actions, movements, and scene descriptions MUST be enclosed in single backticks (e.g. `she adjusts her glasses`).\n"
+    "3. Spoken dialogue in normal text or double quotes.\n"
+    "4. Maintain character immersion strictly at all times."
+)
 
 
-# 4. Command Handlers
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    session = get_or_create_session(user_id)
-    session["state"] = "SETTING_PERSONA"
-    session["temp_buffer"] = []
+    user_sessions[user_id] = {
+        "step": "persona",
+        "persona": DEFAULT_PERSONA,
+        "scenario": DEFAULT_SCENARIO,
+        "rules": DEFAULT_RULES,
+        "user_name": update.effective_user.first_name or "Student",
+        "chat_session": None,
+    }
 
     await update.message.reply_text(
-        "🔥 **Roleplay Setup Wizard Started** 🔥\n\n"
-        "Step 1: Please send your **Persona / System Prompt** parts in multiple messages if needed.\n"
-        "When done sending all parts, type **/done**."
+        "👋 **Welcome to the Roleplay Bot Setup!**\n\n"
+        "Default Professor Profile loaded successfully.\n"
+        "Type /reset anytime to start over, or send your character's name / custom adjustments to proceed."
     )
-
-
-async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    session = get_or_create_session(user_id)
-    current_state = session["state"]
-
-    if current_state == "SETTING_PERSONA":
-        session["persona"] = "\n".join(session["temp_buffer"])
-        session["temp_buffer"] = []
-        session["state"] = "SETTING_SCENARIO"
-        await update.message.reply_text(
-            "✅ **Persona saved successfully!**\n\n"
-            "Step 2: Now send your **Scenario** details. Type **/done** when finished."
-        )
-
-    elif current_state == "SETTING_SCENARIO":
-        session["scenario"] = "\n".join(session["temp_buffer"])
-        session["temp_buffer"] = []
-        session["state"] = "SETTING_RULES"
-        await update.message.reply_text(
-            "✅ **Scenario saved successfully!**\n\n"
-            "Step 3: Send any **Additional Rules / Constraints** (e.g. formatting rules, language style). Type **/done** when finished."
-        )
-
-    elif current_state == "SETTING_RULES":
-        session["rules"] = "\n".join(session["temp_buffer"])
-        session["temp_buffer"] = []
-        session["state"] = "SETTING_PHOTO"
-        await update.message.reply_text(
-            "✅ **Rules saved successfully!**\n\n"
-            "Step 4: Send a **Photo of the Character**.\n"
-            "-> If you want to skip, simply type **none**.\n"
-            "-> Otherwise, upload the image directly."
-        )
-
-    elif current_state == "SETTING_PHOTO":
-        session["char_photo_id"] = None
-        session["state"] = "SETTING_USERNAME"
-        await update.message.reply_text(
-            "✅ **Photo step skipped.**\n\n"
-            "Step 5: What is **your name** for the story? (e.g. Anurag)\n"
-            "Type your name and send it."
-        )
-
-    elif current_state == "SETTING_USERNAME":
-        session["state"] = "ACTIVE"
-        await initialize_active_session(update, session)
-
-    else:
-        await update.message.reply_text(
-            "You are already in an active session! Use /reset to restart the configuration."
-        )
+    
+    # Directly initialize session using default or user details
+    await initialize_active_session(update, user_sessions[user_id])
 
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_sessions[user_id] = {
-        "state": "IDLE",
-        "persona": "",
-        "scenario": "",
-        "rules": "",
-        "char_photo_id": None,
-        "user_name": "Anurag",
-        "temp_buffer": [],
-        "chat_session": None,
-    }
+    if user_id in user_sessions:
+        del user_sessions[user_id]
     await update.message.reply_text(
-        "🔄 Session reset completely. Type /start to begin the setup wizard again."
+        "🔄 Session reset successfully. Type /start to begin a new session."
     )
 
 
 async def initialize_active_session(update: Update, session: dict):
+    global client
+    
     system_instruction = (
         f"[Character Persona]\n{session['persona']}\n\n"
         f"[Starting Scenario]\n{session['scenario']}\n\n"
@@ -143,32 +99,38 @@ async def initialize_active_session(update: Update, session: dict):
         "4. Never break character, never output blank responses, and always keep descriptions vivid and immersive."
     )
 
-    session["chat_session"] = client.chats.create(
-        model="gemini-2.5-flash",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.85,
-            safety_settings=[
-                {
-                    "category": types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    "threshold": types.HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                    "category": types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    "threshold": types.HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                    "category": types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    "threshold": types.HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                    "category": types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    "threshold": types.HarmBlockThreshold.BLOCK_NONE,
-                },
-            ],
-        ),
-    )
+    try:
+        session["chat_session"] = client.chats.create(
+            model="gemini-2.5-flash",
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.85,
+                safety_settings=[
+                    {
+                        "category": types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+                    },
+                    {
+                        "category": types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+                    },
+                    {
+                        "category": types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+                    },
+                    {
+                        "category": types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                        "threshold": types.HarmBlockThreshold.BLOCK_NONE,
+                    },
+                ],
+            ),
+        )
+    except Exception as e:
+        logger.error(f"Failed to create chat session: {e}")
+        await update.message.reply_text(f"⚠️ Error creating chat session: {e}")
+        return
 
+    session["step"] = "active"
     await update.message.reply_text(
         "🎉 **Setup Complete! Roleplay is now ACTIVE.**\n"
         "Generating opening sequence..."
@@ -193,117 +155,56 @@ async def initialize_active_session(update: Update, session: dict):
         )
 
 
-# 5. Message Handler for Wizard Steps & Active Chat
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    session = get_or_create_session(user_id)
-    state = session["state"]
+    text = update.message.text.strip()
 
-    if state == "SETTING_PHOTO":
-        if update.message.photo:
-            photo_file_id = update.message.photo[-1].file_id
-            session["char_photo_id"] = photo_file_id
-            session["state"] = "SETTING_USERNAME"
+    if user_id not in user_sessions:
+        # Auto-initialize if user types without /start
+        user_sessions[user_id] = {
+            "step": "active",
+            "persona": DEFAULT_PERSONA,
+            "scenario": DEFAULT_SCENARIO,
+            "rules": DEFAULT_RULES,
+            "user_name": update.effective_user.first_name or "Student",
+            "chat_session": None,
+        }
+        await initialize_active_session(update, user_sessions[user_id])
+        return
 
-            caption_text = (
-                "📸 **Character Photo Received & Locked!**\n\n"
-                "Step 5: What is **your name** for the story? (e.g. Anurag)\n"
-                "Type your name and send it."
-            )
-            await update.message.reply_photo(photo=photo_file_id, caption=caption_text)
-            return
-        else:
-            text = update.message.text.strip().lower()
-            if text == "none":
-                session["char_photo_id"] = None
-                session["state"] = "SETTING_USERNAME"
-                await update.message.reply_text(
-                    "✅ **Photo skipped.**\n\n"
-                    "Step 5: What is **your name** for the story? (e.g. Anurag)\n"
-                    "Type your name and send it."
-                )
-                return
-            else:
-                await update.message.reply_text(
-                    "Please upload a photo, or type **none** to skip this step."
-                )
-                return
+    session = user_sessions[user_id]
 
-    if state == "SETTING_USERNAME":
-        user_input_name = update.message.text.strip()
-        session["user_name"] = user_input_name if user_input_name else "Anurag"
-        session["state"] = "ACTIVE"
+    # Handle name custom step if triggered
+    if session.get("step") == "name_input":
+        session["user_name"] = text
         await initialize_active_session(update, session)
         return
 
-    if state in ["SETTING_PERSONA", "SETTING_SCENARIO", "SETTING_RULES"]:
-        text = update.message.text
-        if text:
-            session["temp_buffer"].append(text)
-            await update.message.reply_text(
-                "📥 Part received. Send more or type **/done** to proceed."
-            )
+    chat = session.get("chat_session")
+    if not chat:
+        await update.message.reply_text("⚠️ Session error detected. Please type /reset to start over.")
         return
 
-    if state == "ACTIVE":
-        chat = session.get("chat_session")
-        if not chat:
-            await update.message.reply_text(
-                "⚠️ Session error detected. Please type /reset to start over."
-            )
-            return
-
-        user_text = update.message.text
-        if not user_text:
-            return
-
-        try:
-            response = chat.send_message(user_text)
-
-            if response and response.text:
-                reply_text = response.text
-            else:
-                reply_text = (
-                    "`She leans in closer, her breath warm against your skin, deeply "
-                    "absorbing your words without breaking eye contact...`"
-                )
-
-            if len(reply_text) > 4000:
-                for i in range(0, len(reply_text), 4000):
-                    await update.message.reply_text(reply_text[i : i + 4000])
-            else:
-                await update.message.reply_text(reply_text)
-
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            await update.message.reply_text(
-                "`She pauses for a fraction of a second, her gaze locking onto yours "
-                "with an intense challenge, waiting for you to continue...`"
-            )
-    else:
-        await update.message.reply_text(
-            "Please type /start to begin the bot configuration wizard."
-        )
+    try:
+        response = chat.send_message(text)
+        if response and response.text:
+            await update.message.reply_text(response.text)
+        else:
+            await update.message.reply_text("`She raises an eyebrow, waiting for you to elaborate...`")
+    except Exception as e:
+        logger.error(f"Error during chat: {e}")
+        await update.message.reply_text(f"⚠️ An error occurred: {e}\nPlease type /reset to restart.")
 
 
 def main():
-    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is missing!")
+    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reset", reset_command))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("done", done_command))
-    app.add_handler(CommandHandler("reset", reset_command))
-    app.add_handler(
-        MessageHandler(
-            (filters.TEXT | filters.PHOTO) & (~filters.COMMAND), handle_message
-        )
-    )
-
-    print("Bot is up and running securely...")
-    app.run_polling()
+    logger.info("Bot is starting up...")
+    application.run_polling()
 
 
 if __name__ == "__main__":
