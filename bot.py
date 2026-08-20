@@ -19,14 +19,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL_NAME = "gemini-3.1-flash-lite"
 # ============================================
 
-SAFETY_SETTINGS = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
-# ============================================
-
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -42,6 +34,13 @@ generation_config = {
     "max_output_tokens": 1024,
 }
 
+SAFETY_SETTINGS = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+}
+
 class State(Enum):
     SETTING_PERSONA = auto()
     SETTING_SCENARIO = auto()
@@ -50,10 +49,9 @@ class State(Enum):
     SETTING_USERNAME = auto()
     ACTIVE = auto()
 
-# Storage
-user_setup = {}      # user_id → {persona, scenario, rules, username}
-user_chats = {}      # user_id → Gemini chat object (holds full history)
-user_photos = {}     # user_id → photo file_id
+user_setup = {}
+user_chats = {}
+user_photos = {}
 
 def build_system_prompt(data: dict) -> str:
     return f"""
@@ -79,12 +77,12 @@ Strict instructions:
 - Match and escalate the user's energy.
 - Keep responses natural for chat (not too long).
 - Remember everything from previous messages in this conversation.
+- For actions/narration use single backticks like `this is an action`.
 """
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Clear any previous data
     user_setup[user_id] = {
         "persona": "",
         "scenario": "",
@@ -99,7 +97,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "**STEP 1: PERSONA**\n"
         "Describe the character / personality you want me to be.\n"
         "(You can send multiple messages)\n\n"
-        "When finished type → /done"
+        "When finished type → /done",
+        parse_mode="Markdown"
     )
     return State.SETTING_PERSONA.value
 
@@ -125,7 +124,8 @@ async def persona_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**STEP 2: SCENARIO**\n"
             "Describe the scene / setting you want.\n"
             "(You can send multiple messages)\n\n"
-            "When finished type → /done"
+            "When finished type → /done",
+            parse_mode="Markdown"
         )
         return State.SETTING_SCENARIO.value
     return State.SETTING_PERSONA.value
@@ -138,7 +138,8 @@ async def scenario_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**STEP 3: RULES / KINKS**\n"
             "Write any rules, kinks, limits, or special instructions.\n"
             "(You can send multiple messages)\n\n"
-            "When finished type → /done"
+            "When finished type → /done",
+            parse_mode="Markdown"
         )
         return State.SETTING_RULES.value
     return State.SETTING_SCENARIO.value
@@ -150,7 +151,8 @@ async def rules_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✅ Rules saved.\n\n"
             "**STEP 4: PHOTO**\n"
             "Send a photo of the character (optional)\n"
-            "or type `none` to skip."
+            "or type `none` to skip.",
+            parse_mode="Markdown"
         )
         return State.SETTING_PHOTO.value
     return State.SETTING_RULES.value
@@ -172,7 +174,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "**STEP 5: USERNAME**\n"
         "What should I call you? (just type your name)\n\n"
-        "When finished type → /done"
+        "When finished type → /done",
+        parse_mode="Markdown"
     )
     return State.SETTING_USERNAME.value
 
@@ -191,7 +194,6 @@ async def username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             system_instruction=system_prompt
         )
 
-        # Create new chat (this is where memory starts)
         user_chats[user_id] = model.start_chat(history=[])
 
         intro = (
@@ -201,7 +203,7 @@ async def username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"**Name:** {data.get('username', 'User')}\n\n"
             f"I'm ready. Start talking to me..."
         )
-        await update.message.reply_text(intro)
+        await update.message.reply_text(intro, parse_mode="Markdown")
 
         if user_id in user_photos:
             await update.message.reply_photo(
@@ -224,14 +226,13 @@ async def active_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     try:
-        # This keeps FULL memory of past messages
         response = user_chats[user_id].send_message(user_message)
         reply = response.text
 
         # Light cleanup
         reply = reply.replace("**", "*").replace("__", "_")
 
-        await update.message.reply_text(reply)
+        await update.message.reply_text(reply, parse_mode="Markdown")
 
     except Exception as e:
         logger.error(f"Gemini error: {e}")
@@ -240,7 +241,6 @@ async def active_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Something broke... recovering the scene and memory..."
         )
 
-        # Recreate session but try to keep going
         data = user_setup.get(user_id, {})
         system_prompt = build_system_prompt(data)
 
@@ -256,7 +256,7 @@ async def active_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             recovery = user_chats[user_id].send_message(
                 f"(Continue the previous scene. Last user message was: {user_message})"
             )
-            await update.message.reply_text(recovery.text)
+            await update.message.reply_text(recovery.text, parse_mode="Markdown")
         except Exception:
             await update.message.reply_text(
                 "I'm back. Tell me again what you want..."
@@ -265,10 +265,8 @@ async def active_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return State.ACTIVE.value
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Full reset - clears everything and restarts setup from Persona"""
     user_id = update.effective_user.id
 
-    # Completely wipe everything
     user_setup.pop(user_id, None)
     user_chats.pop(user_id, None)
     user_photos.pop(user_id, None)
@@ -276,10 +274,10 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔄 **Full reset done.**\n"
         "All memory, persona, scenario, rules and photo have been deleted.\n\n"
-        "Starting setup again..."
+        "Starting setup again...",
+        parse_mode="Markdown"
     )
 
-    # Restart the full setup flow
     return await start(update, context)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -296,7 +294,7 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
-            CommandHandler("reset", reset),          # /reset works from anywhere
+            CommandHandler("reset", reset),
         ],
         states={
             State.SETTING_PERSONA.value: [
@@ -332,7 +330,7 @@ def main():
 
     app.add_handler(conv_handler)
 
-    print("Sexting bot with persistent memory + full /reset is running...")
+    print("Sexting bot is running...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
