@@ -1,3 +1,4 @@
+import os
 import logging
 from enum import Enum, auto
 from telegram import Update
@@ -13,9 +14,10 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # ================== CONFIG ==================
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"
-MODEL_NAME = "gemini-3.1-flash-lite"   # Gemini 3.1 Flash-Lite
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MODEL_NAME = "gemini-3.1-flash-lite"
+# ============================================
 
 SAFETY_SETTINGS = {
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
